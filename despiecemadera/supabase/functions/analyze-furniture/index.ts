@@ -15,10 +15,21 @@ function reply(status: number, body: Record<string, unknown>) {
 
 const responseSchema = {
   type: "OBJECT",
-  required: ["summary", "assumptions", "parts"],
+  required: ["furnitureType", "summary", "assumptions", "suggestedDimensions", "dimensionConfidence", "parts"],
   properties: {
+    furnitureType: { type: "STRING", enum: ["desk", "kitchen-module", "closet", "shelf", "table", "other"] },
     summary: { type: "STRING" },
     assumptions: { type: "ARRAY", items: { type: "STRING" } },
+    suggestedDimensions: {
+      type: "OBJECT",
+      required: ["widthMm", "heightMm", "depthMm"],
+      properties: {
+        widthMm: { type: "NUMBER" },
+        heightMm: { type: "NUMBER" },
+        depthMm: { type: "NUMBER" },
+      },
+    },
+    dimensionConfidence: { type: "NUMBER" },
     parts: {
       type: "ARRAY",
       items: {
@@ -58,7 +69,7 @@ Deno.serve(async (request: Request) => {
 
   let body: {
     image?: { mimeType?: string; base64?: string };
-    dimensions?: { width?: number; height?: number; depth?: number };
+    dimensions?: { width?: number | null; height?: number | null; depth?: number | null };
     furnitureType?: string;
   };
   try {
@@ -68,21 +79,31 @@ Deno.serve(async (request: Request) => {
   }
 
   const image = body.image;
-  const dimensions = body.dimensions;
+  const dimensions = body.dimensions || {};
   const supportedTypes = ["image/jpeg", "image/png", "image/webp"];
   if (!image || !supportedTypes.includes(image.mimeType || "") || !image.base64 || image.base64.length > 5_600_000) {
     return reply(400, { error: "La imagen debe ser JPG, PNG o WebP y pesar 4 MB o menos." });
   }
-  if (!dimensions || ![dimensions.width, dimensions.height, dimensions.depth].every((value) =>
-    Number.isFinite(value) && Number(value) > 0 && Number(value) <= 10000
-  )) {
-    return reply(400, { error: "Indica ancho, alto y fondo válidos en milímetros." });
+  const providedDimensions: Partial<Record<"width" | "height" | "depth", number>> = {};
+  for (const key of ["width", "height", "depth"] as const) {
+    const value = dimensions[key];
+    if (value === undefined || value === null) continue;
+    if (!Number.isFinite(value) || value <= 0 || value > 10000) {
+      return reply(400, { error: "Las dimensiones indicadas deben ser mayores que cero y estar en milímetros." });
+    }
+    providedDimensions[key] = value;
   }
 
-  const furnitureType = (body.furnitureType || "other").slice(0, 60);
-  const prompt = `Analiza la estructura visible del mueble de la fotografía. El usuario ha indicado el tipo «${furnitureType}» y estas dimensiones exteriores exactas en milímetros: ancho ${dimensions.width}, alto ${dimensions.height}, fondo ${dimensions.depth}.
+  const allowedFurnitureTypes = ["auto", "desk", "kitchen-module", "closet", "shelf", "table", "other"];
+  const requestedType = allowedFurnitureTypes.includes(body.furnitureType || "") ? body.furnitureType! : "auto";
+  const dimensionContext = Object.keys(providedDimensions).length
+    ? `El usuario proporcionó estas dimensiones exteriores exactas en mm: ${JSON.stringify(providedDimensions)}. Respétalas exactamente. Para las que falten, sugiere medidas plausibles y explica la incertidumbre.`
+    : "El usuario no proporcionó escala. Sugiere dimensiones exteriores típicas y plausibles para el tipo de mueble identificado; no afirmes que son medidas obtenidas de la foto.";
+  const prompt = `Analiza la fotografía e identifica el tipo de mueble y su estructura. El usuario seleccionó como referencia «${requestedType}»; si eligió «auto», identifica el tipo por la imagen. Devuelve furnitureType como desk, kitchen-module, closet, shelf, table u other.
 
-No calcules la escala a partir de píxeles ni cambies las dimensiones exteriores dadas. Identifica las piezas estructurales necesarias y propone sus medidas para que correspondan a ese volumen exterior. Usa «T» para piezas de tablero y «L» para listones o piezas de madera maciza. No infieras especie ni acabado del material. Si hay un módulo de cocina, interpreta las medidas como las de ese módulo, no de toda la cocina. Incluye en assumptions las uniones, traseras o detalles que no se puedan confirmar en la imagen. Devuelve solo JSON con summary, assumptions y parts. Cada parte debe incluir name, type («T» o «L»), lengthMm, widthMm, thicknessMm y quantity. Las medidas son una propuesta que el usuario revisará; no afirmes que garantizan resistencia o seguridad.`;
+${dimensionContext}
+
+No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensionConfidence entre 0 y 1 para las medidas que hayas tenido que estimar. Propón las piezas estructurales para el volumen exterior sugerido. Usa «T» para tablero y «L» para listones/madera maciza. No infieras especie ni acabado. Si es un módulo de cocina, interprétalo como un módulo individual, no como una cocina completa. Incluye en assumptions las uniones y detalles no visibles. Devuelve solo JSON con furnitureType, summary, assumptions, suggestedDimensions, dimensionConfidence y parts. Cada pieza incluye name, type («T» o «L»), lengthMm, widthMm, thicknessMm y quantity. Son propuestas revisables, no afirmes que garantizan resistencia o seguridad.`;
 
   const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
@@ -115,7 +136,14 @@ No calcules la escala a partir de píxeles ni cambies las dimensiones exteriores
   const text = result.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
   if (!text) return reply(502, { error: "El servicio de visión no devolvió una propuesta." });
 
-  let proposal: { summary?: string; assumptions?: unknown[]; parts?: Array<Record<string, unknown>> };
+  let proposal: {
+    furnitureType?: string;
+    summary?: string;
+    assumptions?: unknown[];
+    suggestedDimensions?: Record<string, unknown>;
+    dimensionConfidence?: number;
+    parts?: Array<Record<string, unknown>>;
+  };
   try {
     proposal = JSON.parse(text);
   } catch {
@@ -124,6 +152,21 @@ No calcules la escala a partir de píxeles ni cambies las dimensiones exteriores
   if (!Array.isArray(proposal.parts) || proposal.parts.length < 1 || proposal.parts.length > 100) {
     return reply(502, { error: "La propuesta no contiene una lista de piezas válida." });
   }
+
+  const suggested = proposal.suggestedDimensions || {};
+  const suggestedDimensions = {
+    widthMm: providedDimensions.width ?? Number(suggested.widthMm),
+    heightMm: providedDimensions.height ?? Number(suggested.heightMm),
+    depthMm: providedDimensions.depth ?? Number(suggested.depthMm),
+  };
+  if (!Object.values(suggestedDimensions).every((value) => Number.isFinite(value) && value > 0 && value <= 10000)) {
+    return reply(502, { error: "La IA no pudo proponer dimensiones válidas. Añade ancho, alto y fondo e inténtalo otra vez." });
+  }
+  const furnitureTypes = ["desk", "kitchen-module", "closet", "shelf", "table", "other"];
+  const detectedFurnitureType = furnitureTypes.includes(proposal.furnitureType || "") ? proposal.furnitureType! : "other";
+  const dimensionConfidence = Number.isFinite(proposal.dimensionConfidence)
+    ? Math.max(0, Math.min(1, proposal.dimensionConfidence!))
+    : 0.3;
 
   const parts = [];
   for (const part of proposal.parts) {
@@ -144,14 +187,17 @@ No calcules la escala a partir de píxeles ni cambies las dimensiones exteriores
     ? proposal.assumptions.filter((item): item is string => typeof item === "string").slice(0, 20)
     : [];
   const output = {
+    furnitureType: detectedFurnitureType,
     summary: typeof proposal.summary === "string" ? proposal.summary.slice(0, 500) : "Propuesta generada desde la fotografía.",
+    suggestedDimensions,
+    dimensionConfidence,
     assumptions,
     parts,
   };
   const { error: saveError } = await supabase.from("photo_analyses").insert({
     user_id: authData.user.id,
-    furniture_type: furnitureType,
-    dimensions,
+    furniture_type: detectedFurnitureType,
+    dimensions: suggestedDimensions,
     proposal: output,
   });
   if (saveError) return reply(500, { error: "No se pudo guardar el análisis en tu cuenta." });

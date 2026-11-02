@@ -152,6 +152,7 @@ th{font-size:.8rem;font-weight:600;color:var(--mute);text-align:left;padding:0 4
       <div class="fields">
         <label>Foto<input id="photo-file" type="file" accept="image/*"></label>
         <label>Tipo de mueble<select id="furniture-type">
+          <option value="auto">Detectar automáticamente</option>
           <option value="desk">Escritorio</option>
           <option value="kitchen-module">Módulo de cocina</option>
           <option value="closet">Armario</option>
@@ -159,17 +160,23 @@ th{font-size:.8rem;font-weight:600;color:var(--mute);text-align:left;padding:0 4
           <option value="table">Mesa</option>
           <option value="other">Otro</option>
         </select></label>
-        <label>Ancho exterior (mm)<input id="dim-width" type="number" min="1" inputmode="numeric"></label>
-        <label>Alto exterior (mm)<input id="dim-height" type="number" min="1" inputmode="numeric"></label>
-        <label>Fondo exterior (mm)<input id="dim-depth" type="number" min="1" inputmode="numeric"></label>
+        <label>Ancho exterior esperado (mm)<input id="dim-width" type="number" min="1" inputmode="numeric" placeholder="Sugerido por IA"></label>
+        <label>Alto exterior esperado (mm)<input id="dim-height" type="number" min="1" inputmode="numeric" placeholder="Sugerido por IA"></label>
+        <label>Fondo exterior esperado (mm)<input id="dim-depth" type="number" min="1" inputmode="numeric" placeholder="Sugerido por IA"></label>
       </div>
+      <p class="empty" id="dimension-note">Las dimensiones son opcionales. Puedes dejar que la IA las estime y corregirlas antes de usar el despiece.</p>
       <img id="photo-preview" class="photo-preview" alt="Vista previa de la fotografía" hidden>
       <label class="check"><input id="photo-consent" type="checkbox"> Enviar la fotografía para analizar su estructura</label>
-      <div class="actions"><button type="button" id="analyze-photo" disabled>Analizar estructura</button></div>
+      <div class="actions">
+        <button type="button" class="ghost" id="photo-paste" disabled>Pegar desde portapapeles</button>
+        <button type="button" id="analyze-photo" disabled>Analizar estructura</button>
+      </div>
       <p id="photo-status" role="status" aria-live="polite"></p>
     </section>
     <section id="photo-result" hidden>
       <h2>Propuesta de piezas</h2>
+      <p id="photo-identity"></p>
+      <p id="photo-dimensions"></p>
       <p id="photo-summary"></p>
       <ul id="photo-assumptions"></ul>
       <div class="scroll" id="photo-parts"></div>

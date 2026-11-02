@@ -1,2 +1,2 @@
 [functions.analyze-furniture]
-verify_jwt = true
+verify_jwt = false

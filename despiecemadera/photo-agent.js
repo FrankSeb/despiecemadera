@@ -4,6 +4,8 @@ let supabase = null;
 let session = null;
 let selectedFile = null;
 let previewUrl = null;
+let currentProposal = null;
+let requestedDimensions = null;
 
 function setStatus(id, message, isError) {
   const status = document.getElementById(id);
@@ -15,6 +17,7 @@ function updateControls() {
   const signedIn = Boolean(session);
   $('#photo-file').disabled = !signedIn;
   $('#photo-consent').disabled = !signedIn;
+  $('#photo-paste').disabled = !signedIn;
   $('#analyze-photo').disabled = !(supabase && signedIn && selectedFile && $('#photo-consent').checked);
 }
 
@@ -26,8 +29,7 @@ function setPreview(file) {
   if (previewUrl) preview.src = previewUrl;
 }
 
-$('#photo-file').addEventListener('change', event => {
-  const file = event.target.files[0] || null;
+function setPhoto(file, source) {
   selectedFile = null;
   setPreview(null);
   if (!file) {
@@ -42,9 +44,44 @@ $('#photo-file').addEventListener('change', event => {
   } else {
     selectedFile = file;
     setPreview(file);
-    setStatus('photo-status', 'Foto lista para analizar.', false);
+    setStatus('photo-status', source === 'clipboard' ? 'Imagen pegada y lista para analizar.' : 'Foto lista para analizar.', false);
   }
   updateControls();
+}
+
+$('#photo-file').addEventListener('change', event => {
+  setPhoto(event.target.files[0] || null, 'file');
+});
+
+$('#photo-paste').addEventListener('click', async () => {
+  if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+    setStatus('photo-status', 'Este navegador no permite leer imágenes del portapapeles. Usa Ctrl+V o selecciona un archivo.', true);
+    return;
+  }
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const mimeType = item.types.find(type => ['image/png', 'image/jpeg', 'image/webp'].includes(type));
+      if (!mimeType) continue;
+      const blob = await item.getType(mimeType);
+      const extension = mimeType.split('/')[1].replace('jpeg', 'jpg');
+      setPhoto(new File([blob], 'imagen-portapapeles.' + extension, { type: mimeType }), 'clipboard');
+      return;
+    }
+    setStatus('El portapapeles no contiene una imagen compatible.', true);
+  } catch (error) {
+    setStatus(error.message || 'No se pudo leer el portapapeles. Revisa el permiso del navegador.', true);
+  }
+});
+
+document.addEventListener('paste', event => {
+  if ($('#p-foto').hidden || !session) return;
+  const items = Array.from(event.clipboardData?.items || []);
+  const image = items.find(item => item.type.startsWith('image/'));
+  const file = image && image.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  setPhoto(file, 'clipboard');
 });
 
 $('#photo-consent').addEventListener('change', updateControls);
@@ -88,6 +125,33 @@ function makeMaterialSelect(family, selected) {
 
 function renderProposal(data) {
   if (!Array.isArray(data.parts) || !data.parts.length) throw new Error('El análisis no devolvió piezas. Prueba con otra foto.');
+  currentProposal = data;
+  const furnitureNames = {
+    desk: 'Escritorio',
+    'kitchen-module': 'Módulo de cocina',
+    closet: 'Armario',
+    shelf: 'Estantería',
+    table: 'Mesa',
+    other: 'Otro mueble'
+  };
+  const detectedType = data.furnitureType in furnitureNames ? data.furnitureType : 'other';
+  $('#furniture-type').value = detectedType;
+  $('#photo-identity').textContent = 'Mueble identificado: ' + furnitureNames[detectedType] + '.';
+  const suggested = data.suggestedDimensions || {};
+  const keys = [
+    ['width', 'widthMm', 'dim-width'],
+    ['height', 'heightMm', 'dim-height'],
+    ['depth', 'depthMm', 'dim-depth']
+  ];
+  keys.forEach(([, responseKey, inputId]) => {
+    const input = document.getElementById(inputId);
+    if (!input.value && Number.isFinite(Number(suggested[responseKey]))) input.value = suggested[responseKey];
+  });
+  const confidence = Math.round(Math.max(0, Math.min(1, Number(data.dimensionConfidence) || 0)) * 100);
+  const allDimensionsProvided = requestedDimensions && Object.values(requestedDimensions).every(value => value !== null);
+  $('#photo-dimensions').textContent = 'Dimensiones exteriores: ' +
+    ['widthMm', 'heightMm', 'depthMm'].map(key => suggested[key]).join(' × ') + ' mm. ' +
+    (allDimensionsProvided ? 'Tomadas de tus medidas.' : 'Estimación aproximada de la IA (' + confidence + '% de confianza); revisa y corrige antes de continuar.');
   $('#photo-summary').textContent = data.summary || 'Revisa la propuesta antes de calcular los cortes.';
   const assumptions = $('#photo-assumptions');
   assumptions.replaceChildren();
@@ -182,19 +246,21 @@ window.addEventListener('despiece:photo-applied', async event => {
 
 $('#analyze-photo').addEventListener('click', async () => {
   const dimensions = {
-    width: Number($('#dim-width').value),
-    height: Number($('#dim-height').value),
-    depth: Number($('#dim-depth').value)
+    width: $('#dim-width').value.trim() ? Number($('#dim-width').value) : null,
+    height: $('#dim-height').value.trim() ? Number($('#dim-height').value) : null,
+    depth: $('#dim-depth').value.trim() ? Number($('#dim-depth').value) : null
   };
-  if (!Object.values(dimensions).every(value => Number.isFinite(value) && value > 0)) {
-    setStatus('photo-status', 'Introduce ancho, alto y fondo exteriores en milímetros.', true);
+  if (!Object.values(dimensions).every(value => value === null || (Number.isFinite(value) && value > 0 && value <= 10000))) {
+    setStatus('photo-status', 'Las medidas deben estar en milímetros y ser mayores que cero.', true);
     return;
   }
+  requestedDimensions = dimensions;
   const button = $('#analyze-photo');
   button.disabled = true;
-  setStatus('photo-status', 'Analizando la estructura con las dimensiones que indicaste…', false);
+  setStatus('photo-status', 'Identificando el mueble y proponiendo su estructura…', false);
   $('#photo-result').hidden = true;
   try {
+    if (!selectedFile) throw new Error('Selecciona una foto para analizar.');
     const base64 = await readAsBase64(selectedFile);
     const { data, error } = await supabase.functions.invoke('analyze-furniture', {
       body: {
@@ -203,7 +269,19 @@ $('#analyze-photo').addEventListener('click', async () => {
         furnitureType: $('#furniture-type').value
       }
     });
-    if (error) throw error;
+    if (error) {
+      let detail = error.message || 'No se pudo analizar la foto.';
+      if (error.context && typeof error.context.clone === 'function') {
+        try {
+          const responseBody = await error.context.clone().json();
+          if (responseBody.error) detail = responseBody.error;
+        } catch {}
+      }
+      if (/failed to send a request|networkerror|load failed/i.test(detail)) {
+        detail = 'No se pudo contactar con la función. Comprueba que analyze-furniture esté desplegada en Supabase.';
+      }
+      throw new Error(detail);
+    }
     renderProposal(data);
     setStatus('photo-status', 'Propuesta generada. Revisa y corrige las piezas antes de aplicarla.', false);
   } catch (error) {

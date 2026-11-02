@@ -2,17 +2,18 @@ window.APP_SESSION_READY = (async () => {
   const config = window.SUPABASE_CONFIG;
   const demo = new URLSearchParams(location.search).get('demo') === '1';
 
-  if (!config || !config.url || !config.anonKey) {
-    if (!demo) {
-      location.replace('./index.html');
-      return null;
-    }
+  if (demo) {
     let id = sessionStorage.getItem('despiece.demo-session');
     if (!id) {
       id = crypto.randomUUID();
       sessionStorage.setItem('despiece.demo-session', id);
     }
     return { mode: 'demo', user: { id }, supabase: null, storage: sessionStorage };
+  }
+
+  if (!config || !config.url || !config.anonKey) {
+    location.replace('./index.html');
+    return null;
   }
 
   try {

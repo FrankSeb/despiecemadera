@@ -27,22 +27,26 @@ Medidas en milímetros. Las cuentas guardan su espacio de trabajo en Supabase y 
 
 ## Análisis desde foto
 
-La pestaña **Desde foto** requiere configurar un proyecto Supabase. La persona proporciona ancho, alto y fondo exteriores; la IA interpreta la estructura de la fotografía y devuelve una propuesta editable. No se estima la escala desde píxeles. La imagen se envía al proveedor configurado solo tras aceptar la casilla de consentimiento.
+La pestaña **Desde foto** identifica el tipo de mueble y propone la estructura y dimensiones exteriores. Las medidas que escriba la persona se respetan; las que deje vacías se estiman con una confianza orientativa y se pueden corregir antes de generar los cortes. La IA no obtiene una escala fiable de los píxeles. La imagen solo se envía tras aceptar el consentimiento.
 
 1. Crea un proyecto en [Supabase](https://supabase.com/dashboard).
 2. En **Authentication → URL Configuration**, configura como Site URL `https://frankseb.github.io/despiecemadera/` y añade esa misma URL a los Redirect URLs.
 3. La configuración que ya está en `supabase-config.js` se publica directamente. Opcionalmente, en GitHub abre **Settings → Secrets and variables → Actions → Variables** y crea `SUPABASE_URL` y `SUPABASE_ANON_KEY` con **Project URL** y **Publishable key**; si existen ambas, el workflow las usa para generar la configuración. La clave publishable es pública; nunca uses `service_role` aquí.
-4. Desde PowerShell, entra en la carpeta `despiecemadera`, vincula el proyecto y publica las migraciones y la función:
+4. En **Settings → Secrets and variables → Actions**, agrega:
+
+   - Variable `SUPABASE_PROJECT_REF`: el identificador que aparece al inicio de la Project URL.
+   - Secret `SUPABASE_ACCESS_TOKEN`: un access token de tu cuenta Supabase.
+   - Secret `GEMINI_API_KEY`: la clave de Gemini para visión.
+
+5. Aplica una vez las migraciones de la base de datos desde PowerShell, dentro de la carpeta `despiecemadera`:
 
    ```powershell
    supabase login
    supabase link --project-ref TU_PROJECT_REF
    supabase db push
-   supabase secrets set GEMINI_API_KEY=TU_CLAVE
-   supabase functions deploy analyze-furniture
    ```
 
-`db push` aplica las migraciones de perfiles, catálogo compartido y espacio de trabajo privado por usuario. En **Authentication → Providers**, habilita Email. La Edge Function exige sesión; la clave de Gemini se mantiene como secreto en Supabase. Los planes gratuitos y límites de Supabase/Gemini pueden cambiar; consulta sus precios antes de usarlo con volumen.
+Al subir cambios de `supabase/` a `main`, `.github/workflows/deploy-supabase-function.yml` guarda la clave de Gemini en Supabase y despliega la Edge Function. Debes habilitar Email en **Authentication → Providers**. El gateway permite el preflight CORS; la propia función valida la sesión del usuario. No guardes `service_role`, la cadena de conexión ni claves privadas en el frontend. Los planes gratuitos y límites de Supabase/Gemini pueden cambiar.
 
 ## Añadir un modelo nuevo
 
