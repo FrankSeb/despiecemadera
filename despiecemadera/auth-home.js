@@ -2,6 +2,15 @@ const $ = selector => document.querySelector(selector);
 let supabase = null;
 let session = null;
 let mode = 'login';
+const authCallback = (() => {
+  const query = new URLSearchParams(location.search);
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  return {
+    error: fragment.get('error_description') || query.get('error_description') || fragment.get('error') || query.get('error'),
+    errorCode: fragment.get('error_code') || query.get('error_code'),
+    returned: query.has('code') || fragment.has('access_token') || fragment.has('error') || query.has('error')
+  };
+})();
 
 function setStatus(message, isError = false) {
   const status = $('#auth-status');
@@ -81,6 +90,30 @@ $('#reset-password').addEventListener('click', async () => {
   }
 });
 
+$('#resend-confirmation').addEventListener('click', async () => {
+  if (!supabase) return;
+  const email = $('#email').value.trim();
+  if (!email) {
+    setStatus('Escribe el correo de la cuenta para reenviar la confirmación.', true);
+    return;
+  }
+  const button = $('#resend-confirmation');
+  button.disabled = true;
+  try {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: location.origin + location.pathname }
+    });
+    if (error) throw error;
+    setStatus('Si la cuenta necesita confirmación, enviaremos un nuevo enlace. Revisa también la carpeta de spam.');
+  } catch (error) {
+    setStatus(error.message || 'No se pudo reenviar el enlace de confirmación.', true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $('#password-form').addEventListener('submit', async event => {
   event.preventDefault();
   if (!supabase || !session) return;
@@ -119,14 +152,27 @@ async function init() {
     supabase = createClient(config.url, config.anonKey);
     $('#auth-submit').disabled = false;
     $('#reset-password').disabled = false;
+    $('#resend-confirmation').disabled = false;
     const { data, error } = await supabase.auth.getSession();
     if (error) throw error;
     showSession(data.session);
+    if (authCallback.error) {
+      if (authCallback.errorCode === 'otp_expired') {
+        $('#resend-confirmation').hidden = false;
+        setStatus('El enlace de confirmación venció o ya fue utilizado. Escribe tu correo y solicita uno nuevo.', true);
+      } else {
+        setStatus('Supabase no pudo confirmar el enlace: ' + authCallback.error, true);
+      }
+    } else if (authCallback.returned && !data.session) {
+      setStatus('El enlace volvió a la app, pero no abrió una sesión. Intenta iniciar sesión; si no funciona, solicita un enlace nuevo.', true);
+    } else if (authCallback.returned && data.session) {
+      setStatus('Correo confirmado. Tu cuenta ya está activa.');
+    }
     supabase.auth.onAuthStateChange((_event, nextSession) => {
       showSession(nextSession);
-      if (!nextSession) setStatus('Conectado a Supabase. Inicia sesión o crea una cuenta.');
+      if (!nextSession && !authCallback.returned) setStatus('Conectado a Supabase. Inicia sesión o crea una cuenta.');
     });
-    if (!data.session) setStatus('Conectado a Supabase. Inicia sesión o crea una cuenta.');
+    if (!data.session && !authCallback.returned) setStatus('Conectado a Supabase. Inicia sesión o crea una cuenta.');
   } catch (error) {
     setStatus(error.message || 'No se pudo conectar con Supabase.', true);
   }
