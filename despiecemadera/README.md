@@ -36,7 +36,6 @@ La pestaña **Desde foto** identifica el tipo de mueble y propone la estructura 
 
    - Variable `SUPABASE_PROJECT_REF`: el identificador que aparece al inicio de la Project URL.
    - Secret `SUPABASE_ACCESS_TOKEN`: un access token de tu cuenta Supabase.
-   - Secret `GEMINI_API_KEY`: la clave de Gemini para visión.
 
 5. Aplica una vez las migraciones de la base de datos desde PowerShell, dentro de la carpeta `despiecemadera`:
 
@@ -44,9 +43,10 @@ La pestaña **Desde foto** identifica el tipo de mueble y propone la estructura 
    supabase login
    supabase link --project-ref TU_PROJECT_REF
    supabase db push
+   supabase secrets set GEMINI_API_KEY=TU_CLAVE --project-ref TU_PROJECT_REF
    ```
 
-Al subir cambios de `supabase/` a `main`, `.github/workflows/deploy-supabase-function.yml` guarda la clave de Gemini en Supabase y despliega la Edge Function. Debes habilitar Email en **Authentication → Providers**. El gateway permite el preflight CORS; la propia función valida la sesión del usuario. No guardes `service_role`, la cadena de conexión ni claves privadas en el frontend. Los planes gratuitos y límites de Supabase/Gemini pueden cambiar.
+Al subir cambios de `supabase/` a `main`, `.github/workflows/deploy-supabase-function.yml` despliega la Edge Function. La clave de Gemini se guarda directamente como secreto en Supabase, no en GitHub. Debes habilitar Email en **Authentication → Providers**. El gateway permite el preflight CORS; la propia función valida la sesión del usuario. No guardes `service_role`, la cadena de conexión ni claves privadas en el frontend. Los planes gratuitos y límites de Supabase/Gemini pueden cambiar.
 
 ## Añadir un modelo nuevo
 
