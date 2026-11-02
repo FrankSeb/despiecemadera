@@ -25,14 +25,11 @@ jobs:
       - uses: actions/configure-pages@v5
       - name: Configure Supabase client
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const config = {
-            url: process.env.SUPABASE_URL || '',
-            anonKey: process.env.SUPABASE_ANON_KEY || ''
-          };
-          fs.writeFileSync('./despiecemadera/supabase-config.js', `window.SUPABASE_CONFIG = ${JSON.stringify(config)};\n`);
-          NODE
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_ANON_KEY" ]; then
+            node -e 'const fs=require("node:fs"); const config={url:process.env.SUPABASE_URL,anonKey:process.env.SUPABASE_ANON_KEY}; fs.writeFileSync("./despiecemadera/supabase-config.js", "window.SUPABASE_CONFIG = "+JSON.stringify(config)+";");'
+          else
+            echo "GitHub variables not set; keeping the repository Supabase config."
+          fi
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}

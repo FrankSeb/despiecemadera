@@ -31,7 +31,7 @@ La pestaña **Desde foto** requiere configurar un proyecto Supabase. La persona 
 
 1. Crea un proyecto en [Supabase](https://supabase.com/dashboard).
 2. En **Authentication → URL Configuration**, configura como Site URL `https://frankseb.github.io/despiecemadera/` y añade esa misma URL a los Redirect URLs.
-3. En GitHub, abre **Settings → Secrets and variables → Actions → Variables** y crea `SUPABASE_URL` y `SUPABASE_ANON_KEY` con los valores de **Project URL** y **anon/publishable key** de Supabase. GitHub Actions generará `supabase-config.js` al publicar. La clave anon/publishable es pública; nunca uses `service_role` aquí.
+3. La configuración que ya está en `supabase-config.js` se publica directamente. Opcionalmente, en GitHub abre **Settings → Secrets and variables → Actions → Variables** y crea `SUPABASE_URL` y `SUPABASE_ANON_KEY` con **Project URL** y **Publishable key**; si existen ambas, el workflow las usa para generar la configuración. La clave publishable es pública; nunca uses `service_role` aquí.
 4. Desde PowerShell, entra en la carpeta `despiecemadera`, vincula el proyecto y publica las migraciones y la función:
 
    ```powershell
