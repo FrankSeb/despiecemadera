@@ -27,7 +27,7 @@ Medidas en milímetros. Las cuentas guardan su espacio de trabajo en Supabase y 
 
 ## Análisis desde foto
 
-La pestaña **Desde foto** identifica el tipo de mueble y propone la estructura y dimensiones exteriores. Las medidas que escriba la persona se respetan; las que deje vacías se estiman con una confianza orientativa y se pueden corregir antes de generar los cortes. La IA no obtiene una escala fiable de los píxeles. La imagen solo se envía tras aceptar el consentimiento.
+La pestaña **Desde foto** identifica el tipo de mueble y propone la estructura y dimensiones exteriores con Gemini 3.8 Flash (Interactions API). Las medidas que escriba la persona se respetan; las que deje vacías se estiman con una confianza orientativa y se pueden corregir antes de generar los cortes. La IA no obtiene una escala fiable de los píxeles. La imagen solo se envía tras aceptar el consentimiento, y la solicitud se envía con `store: false` para no conservar la interacción en Google.
 
 1. Crea un proyecto en [Supabase](https://supabase.com/dashboard).
 2. En **Authentication → URL Configuration**, configura como Site URL `https://frankseb.github.io/despiecemadera/` y añade esa misma URL a los Redirect URLs.

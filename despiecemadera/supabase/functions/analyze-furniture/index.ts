@@ -14,34 +14,34 @@ function reply(status: number, body: Record<string, unknown>) {
 }
 
 const responseSchema = {
-  type: "OBJECT",
+  type: "object",
   required: ["furnitureType", "summary", "assumptions", "suggestedDimensions", "dimensionConfidence", "parts"],
   properties: {
-    furnitureType: { type: "STRING", enum: ["desk", "kitchen-module", "closet", "shelf", "table", "other"] },
-    summary: { type: "STRING" },
-    assumptions: { type: "ARRAY", items: { type: "STRING" } },
+    furnitureType: { type: "string", enum: ["desk", "kitchen-module", "closet", "shelf", "table", "other"] },
+    summary: { type: "string" },
+    assumptions: { type: "array", items: { type: "string" } },
     suggestedDimensions: {
-      type: "OBJECT",
+      type: "object",
       required: ["widthMm", "heightMm", "depthMm"],
       properties: {
-        widthMm: { type: "NUMBER" },
-        heightMm: { type: "NUMBER" },
-        depthMm: { type: "NUMBER" },
+        widthMm: { type: "number" },
+        heightMm: { type: "number" },
+        depthMm: { type: "number" },
       },
     },
-    dimensionConfidence: { type: "NUMBER" },
+    dimensionConfidence: { type: "number" },
     parts: {
-      type: "ARRAY",
+      type: "array",
       items: {
-        type: "OBJECT",
+        type: "object",
         required: ["name", "type", "lengthMm", "widthMm", "thicknessMm", "quantity"],
         properties: {
-          name: { type: "STRING" },
-          type: { type: "STRING", enum: ["T", "L"] },
-          lengthMm: { type: "NUMBER" },
-          widthMm: { type: "NUMBER" },
-          thicknessMm: { type: "NUMBER" },
-          quantity: { type: "INTEGER" },
+          name: { type: "string" },
+          type: { type: "string", enum: ["T", "L"] },
+          lengthMm: { type: "number" },
+          widthMm: { type: "number" },
+          thicknessMm: { type: "number" },
+          quantity: { type: "integer" },
         },
       },
     },
@@ -105,21 +105,26 @@ ${dimensionContext}
 
 No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensionConfidence entre 0 y 1 para las medidas que hayas tenido que estimar. Propón las piezas estructurales para el volumen exterior sugerido. Usa «T» para tablero y «L» para listones/madera maciza. No infieras especie ni acabado. Si es un módulo de cocina, interprétalo como un módulo individual, no como una cocina completa. Incluye en assumptions las uniones y detalles no visibles. Devuelve solo JSON con furnitureType, summary, assumptions, suggestedDimensions, dimensionConfidence y parts. Cada pieza incluye name, type («T» o «L»), lengthMm, widthMm, thicknessMm y quantity. Son propuestas revisables, no afirmes que garantizan resistencia o seguridad.`;
 
-  const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
+  const endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions";
   let modelResponse: Response;
   try {
     modelResponse = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+        "Api-Revision": "2026-05-20",
+      },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: image.mimeType, data: image.base64 } },
-          ],
-        }],
-        generationConfig: { responseMimeType: "application/json", responseSchema },
+        model,
+        input: [
+          { type: "text", text: prompt },
+          { type: "image", data: image.base64, mime_type: image.mimeType },
+        ],
+        response_format: { type: "text", mime_type: "application/json", schema: responseSchema },
+        generation_config: { thinking_level: "minimal" },
+        store: false,
       }),
     });
   } catch {
@@ -140,13 +145,13 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
     });
   }
 
-  let result: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  let result: { output_text?: string };
   try {
     result = await modelResponse.json();
   } catch {
     return reply(502, { error: "El servicio de visión devolvió una respuesta inválida." });
   }
-  const text = result.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
+  const text = result.output_text?.trim();
   if (!text) return reply(502, { error: "El servicio de visión no devolvió una propuesta." });
 
   let proposal: {
