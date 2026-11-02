@@ -48,7 +48,7 @@ $('#auth-form').addEventListener('submit', async event => {
   button.disabled = true;
   try {
     const result = mode === 'signup'
-      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: new URL('./index.html', location.href).href } })
+      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } })
       : await supabase.auth.signInWithPassword({ email, password });
     if (result.error) throw result.error;
     if (mode === 'signup' && !result.data.session) {
@@ -72,7 +72,7 @@ $('#reset-password').addEventListener('click', async () => {
   }
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: new URL('./index.html', location.href).href
+      redirectTo: location.origin + location.pathname
     });
     if (error) throw error;
     setStatus('Si el correo está registrado, recibirás un enlace para restablecer la contraseña.');
@@ -122,7 +122,11 @@ async function init() {
     const { data, error } = await supabase.auth.getSession();
     if (error) throw error;
     showSession(data.session);
-    supabase.auth.onAuthStateChange((_event, nextSession) => showSession(nextSession));
+    supabase.auth.onAuthStateChange((_event, nextSession) => {
+      showSession(nextSession);
+      if (!nextSession) setStatus('Conectado a Supabase. Inicia sesión o crea una cuenta.');
+    });
+    if (!data.session) setStatus('Conectado a Supabase. Inicia sesión o crea una cuenta.');
   } catch (error) {
     setStatus(error.message || 'No se pudo conectar con Supabase.', true);
   }
