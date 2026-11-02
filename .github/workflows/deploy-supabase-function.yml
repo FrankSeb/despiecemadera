@@ -37,4 +37,4 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         working-directory: ./despiecemadera
-        run: supabase functions deploy analyze-furniture --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+        run: supabase functions deploy analyze-furniture --remote="$SUPABASE_PROJECT_REF" --no-verify-jwt --yes
