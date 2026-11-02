@@ -143,47 +143,65 @@ function fmt(n){return n.toLocaleString('es-ES',{maximumFractionDigits:1})}
 
 /* ================= Modelos paramétricos (cajas 3D → planos 2D) ================= */
 /* x: izquierda→derecha · y: abajo→arriba · z: fondo→frente. k: T tablero, L listón */
-function bx(n,x,y,z,dx,dy,dz,k,door){return{n:n,x:x,y:y,z:z,dx:dx,dy:dy,dz:dz,k:k,door:!!door}}
+var MATERIALS={
+  melamine:{name:'Melamina (aglomerado)',family:'panel',thicknesses:[8,10,12,15,16,18,19,22,25,30,36],default:18},
+  particle:{name:'Aglomerado crudo',family:'panel',thicknesses:[8,10,12,15,16,18,19,22,25,30],default:18},
+  mdf:{name:'MDF',family:'panel',thicknesses:[3,5.5,6,9,12,15,18,25,30],default:18},
+  hdf:{name:'HDF / hardboard',family:'panel',thicknesses:[2.5,3,4,5,6],default:4},
+  plywood:{name:'Contrachapado',family:'panel',thicknesses:[3,4,6,9,12,15,18,21,24],default:18},
+  osb:{name:'OSB',family:'panel',thicknesses:[6,9,11,12,15,18,22,25],default:18},
+  wood:{name:'Madera maciza (genérica)',family:'wood',thicknesses:[10,12,15,18,20,25,30,40,50,60],default:20}
+};
+var MATERIAL_FAMILIES={panel:['melamine','particle','mdf','hdf','plywood','osb','wood'],wood:['wood']};
+function materialName(id){return MATERIALS[id]?MATERIALS[id].name:'Sin especificar'}
+function materialOptions(family,selected){
+  return MATERIAL_FAMILIES[family].map(function(id){return '<option value="'+id+'"'+(id===selected?' selected':'')+'>'+esc(materialName(id))+'</option>'}).join('');
+}
+function defaultMaterial(k){return k==='L'?'wood':'melamine'}
+function bx(n,x,y,z,dx,dy,dz,k,door,group){return{n:n,x:x,y:y,z:z,dx:dx,dy:dy,dz:dz,k:k,door:!!door,group:group}}
 var TPL={
   mueble:{name:'Mueble con estantes y puertas',
-    f:[['A','Ancho',800],['H','Alto',720],['F','Fondo',560],['e','Espesor tablero',18],['n','Estantes',2],['p','Puertas (0 a 2)',2],['tf','Espesor del fondo (0 = sin fondo)',4]],
+    materialGroups:{carcass:{label:'Cuerpo y puertas',family:'panel',default:'melamine'},back:{label:'Fondo',family:'panel',default:'hdf'}},
+    f:[['A','Ancho',800],['H','Alto',720],['F','Fondo',560],['e','Espesor tablero',18,'carcass',true],['n','Estantes',2],['p','Puertas (0 a 2)',2],['tf','Espesor del fondo (0 = sin fondo)',4,'back',true]],
     build:function(v){
       var A=v.A,H=v.H,F=v.F,e=v.e,n=Math.max(0,Math.floor(v.n)),p=Math.max(0,Math.min(2,Math.floor(v.p))),tf=Math.max(0,v.tf),d=F-tf,B=[];
       if(!(A>2*e&&H>2*e&&d>40&&e>0))return B;
-      B.push(bx('Lateral',0,0,tf,e,H,d,'T'),bx('Lateral',A-e,0,tf,e,H,d,'T'),
-             bx('Tapa',e,H-e,tf,A-2*e,e,d,'T'),bx('Base',e,0,tf,A-2*e,e,d,'T'));
+      B.push(bx('Lateral',0,0,tf,e,H,d,'T',false,'carcass'),bx('Lateral',A-e,0,tf,e,H,d,'T',false,'carcass'),
+             bx('Tapa',e,H-e,tf,A-2*e,e,d,'T',false,'carcass'),bx('Base',e,0,tf,A-2*e,e,d,'T',false,'carcass'));
       if(n){var gap=Math.max(0,(H-2*e-n*e)/(n+1));
-        for(var i=1;i<=n;i++)B.push(bx('Estante',e,e+i*gap+(i-1)*e,tf,A-2*e,e,d-20,'T'));}
-      if(tf>0)B.push(bx('Fondo',0,0,0,A,H,tf,'T'));
+        for(var i=1;i<=n;i++)B.push(bx('Estante',e,e+i*gap+(i-1)*e,tf,A-2*e,e,d-20,'T',false,'carcass'));}
+      if(tf>0)B.push(bx('Fondo',0,0,0,A,H,tf,'T',false,'back'));
       if(p){var pw=(A-3*(p-1))/p;
-        for(var j=0;j<p;j++)B.push(bx('Puerta',j*(pw+3),3,F,pw,H-6,e,'T',true));}
+        for(var j=0;j<p;j++)B.push(bx('Puerta',j*(pw+3),3,F,pw,H-6,e,'T',true,'carcass'));}
       return B;}},
   mesa:{name:'Mesa con patas y travesaños',
-    f:[['A','Largo',1200],['F','Ancho',700],['H','Alto',750],['e','Espesor del tablero',30],['s','Sección de pata',60],['ah','Alto del travesaño',80],['at','Espesor del travesaño',20],['i','Retranqueo de patas',40]],
+    materialGroups:{top:{label:'Tablero de la mesa',family:'panel',default:'wood'},frame:{label:'Estructura y patas',family:'wood',default:'wood'}},
+    f:[['A','Largo',1200],['F','Ancho',700],['H','Alto',750],['e','Espesor del tablero',30,'top',true],['s','Sección de pata',60,'frame',false],['ah','Alto del travesaño',80],['at','Espesor del travesaño',20,'frame',true],['i','Retranqueo de patas',40]],
     build:function(v){
       var A=v.A,F=v.F,H=v.H,e=v.e,s=v.s,ah=v.ah,at=v.at,i=v.i,B=[];
       if(!(A>2*(i+s)&&F>2*(i+s)&&H>e+ah&&s>0))return B;
       var lh=H-e,ay=H-e-ah;
-      B.push(bx('Tablero',0,H-e,0,A,e,F,'T'));
-      [i,A-i-s].forEach(function(x){[i,F-i-s].forEach(function(z){B.push(bx('Pata',x,0,z,s,lh,s,'L'))})});
-      B.push(bx('Travesaño largo',i+s,ay,i,A-2*(i+s),ah,at,'L'),bx('Travesaño largo',i+s,ay,F-i-at,A-2*(i+s),ah,at,'L'),
-             bx('Travesaño corto',i,ay,i+s,at,ah,F-2*(i+s),'L'),bx('Travesaño corto',A-i-at,ay,i+s,at,ah,F-2*(i+s),'L'));
+      B.push(bx('Tablero',0,H-e,0,A,e,F,'T',false,'top'));
+      [i,A-i-s].forEach(function(x){[i,F-i-s].forEach(function(z){B.push(bx('Pata',x,0,z,s,lh,s,'L',false,'frame'))})});
+      B.push(bx('Travesaño largo',i+s,ay,i,A-2*(i+s),ah,at,'L',false,'frame'),bx('Travesaño largo',i+s,ay,F-i-at,A-2*(i+s),ah,at,'L',false,'frame'),
+             bx('Travesaño corto',i,ay,i+s,at,ah,F-2*(i+s),'L',false,'frame'),bx('Travesaño corto',A-i-at,ay,i+s,at,ah,F-2*(i+s),'L',false,'frame'));
       return B;}},
   escritorio:{name:'Escritorio con laterales',
-    f:[['A','Ancho',1200],['F','Fondo',600],['H','Alto',750],['e','Espesor de la tapa',25],['e2','Espesor de laterales',18],['ins','Retranqueo lateral',40],['fh','Alto del faldón',300]],
+    materialGroups:{top:{label:'Tapa',family:'panel',default:'melamine'},body:{label:'Laterales y faldón',family:'panel',default:'melamine'}},
+    f:[['A','Ancho',1200],['F','Fondo',600],['H','Alto',750],['e','Espesor de la tapa',25,'top',true],['e2','Espesor de laterales',18,'body',true],['ins','Retranqueo lateral',40],['fh','Alto del faldón',300]],
     build:function(v){
       var A=v.A,F=v.F,H=v.H,e=v.e,e2=v.e2,ins=v.ins,fh=Math.min(v.fh,v.H-v.e),B=[];
       if(!(A>2*(ins+e2)&&F>ins+20&&H>e&&e2>0))return B;
-      B.push(bx('Tapa',0,H-e,0,A,e,F,'T'),bx('Lateral',ins,0,0,e2,H-e,F-ins,'T'),bx('Lateral',A-ins-e2,0,0,e2,H-e,F-ins,'T'),
-             bx('Faldón',ins+e2,H-e-fh,0,A-2*(ins+e2),fh,e2,'T'));
+      B.push(bx('Tapa',0,H-e,0,A,e,F,'T',false,'top'),bx('Lateral',ins,0,0,e2,H-e,F-ins,'T',false,'body'),bx('Lateral',A-ins-e2,0,0,e2,H-e,F-ins,'T',false,'body'),
+             bx('Faldón',ins+e2,H-e-fh,0,A-2*(ins+e2),fh,e2,'T',false,'body'));
       return B;}}
 };
-function partsFrom(B){
+function partsFrom(B,templateKey){
   var m={},out=[];
   B.forEach(function(b){
     var d=[b.dx,b.dy,b.dz].map(r1).sort(function(a,c){return c-a});
-    var key=b.n+'|'+d.join('x')+'|'+b.k;
-    if(!m[key]){m[key]={n:b.n,l:d[0],w:d[1],t:d[2],q:0,k:b.k};out.push(m[key])}
+    var mat=materialFor(b.group,templateKey),key=b.n+'|'+d.join('x')+'|'+b.k+'|'+mat;
+    if(!m[key]){m[key]={n:b.n,l:d[0],w:d[1],t:d[2],q:0,k:b.k,mat:mat};out.push(m[key])}
     m[key].q++;
   });
   return out;
@@ -193,9 +211,23 @@ function partsFrom(B){
 var S={L:2440,W:1220,k:3,SL:2400,rot:false,tab:'modelo',tpl:'mueble',v:{},doors:true,p:null};
 try{var raw=localStorage.getItem(KEY);if(raw){var o=JSON.parse(raw);if(o&&typeof o==='object')S=Object.assign(S,o)}}catch(e){}
 Object.keys(TPL).forEach(function(t){S.v[t]=Object.assign({},defaults(t),S.v[t]||{})});
+Object.keys(TPL).forEach(function(t){
+  Object.keys(TPL[t].materialGroups).forEach(function(group){
+    var key='_mat_'+group,id=S.v[t][key],config=TPL[t].materialGroups[group];
+    if(!MATERIALS[id]||MATERIALS[id].family!==config.family)S.v[t][key]=config.default;
+  });
+});
 if(!TPL[S.tpl])S.tpl='mueble';
-if(!Array.isArray(S.p)||!S.p.length)S.p=partsFrom(TPL.mueble.build(S.v.mueble));
-function defaults(t){var d={};TPL[t].f.forEach(function(f){d[f[0]]=f[2]});return d}
+if(!Array.isArray(S.p)||!S.p.length)S.p=partsFrom(TPL.mueble.build(S.v.mueble),'mueble');
+function defaults(t){
+  var d={};TPL[t].f.forEach(function(f){d[f[0]]=f[2]});
+  Object.keys(TPL[t].materialGroups).forEach(function(group){d['_mat_'+group]=TPL[t].materialGroups[group].default});
+  return d;
+}
+function materialFor(group,templateKey){
+  var t=templateKey||S.tpl,config=TPL[t].materialGroups[group],id=config&&S.v[t]['_mat_'+group];
+  return MATERIALS[id]?id:(config?config.default:'melamine');
+}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 
 var NM={};
@@ -227,14 +259,14 @@ function views(B){
          view('Planta',B,X,Z,function(b){return[b.x,b.z,b.dx,b.dz]},function(b){return b.y});
 }
 function bomTable(parts,withTotal){
-  var h='<table class="bom"><thead><tr><th>Pieza</th><th>Tipo</th><th class="n">Largo</th><th class="n">Ancho</th><th class="n">Esp.</th><th class="n">Cant.</th><th class="n">Total</th></tr></thead><tbody>',tq=0,ta=0,tl=0;
+  var h='<table class="bom"><thead><tr><th>Pieza</th><th>Material</th><th>Tipo</th><th class="n">Largo</th><th class="n">Ancho</th><th class="n">Esp.</th><th class="n">Cant.</th><th class="n">Total</th></tr></thead><tbody>',tq=0,ta=0,tl=0;
   parts.forEach(function(x){
     var tot=x.k==='L'?x.l*x.q/1000:x.l*x.w*x.q/1e6;
     if(x.k==='L')tl+=tot;else ta+=tot;tq+=x.q;
-    h+='<tr><td><span class="sw" style="background:'+hue(cidx(x.n))+'"></span>'+esc(x.n)+'</td><td>'+(x.k==='L'?'Listón':'Tablero')+'</td><td class="n">'+fmt(x.l)+'</td><td class="n">'+fmt(x.w)+'</td><td class="n">'+fmt(x.t||0)+'</td><td class="n">'+x.q+'</td><td class="n">'+tot.toFixed(3)+(x.k==='L'?' m':' m²')+'</td></tr>';
+    h+='<tr><td><span class="sw" style="background:'+hue(cidx(x.n))+'"></span>'+esc(x.n)+'</td><td>'+esc(materialName(x.mat))+'</td><td>'+(x.k==='L'?'Listón':'Tablero')+'</td><td class="n">'+fmt(x.l)+'</td><td class="n">'+fmt(x.w)+'</td><td class="n">'+fmt(x.t||0)+'</td><td class="n">'+x.q+'</td><td class="n">'+tot.toFixed(3)+(x.k==='L'?' m':' m²')+'</td></tr>';
   });
   h+='</tbody>';
-  if(withTotal)h+='<tfoot><tr><td>Total</td><td></td><td></td><td></td><td></td><td class="n">'+tq+'</td><td class="n">'+(ta?ta.toFixed(3)+' m²':'')+(ta&&tl?' · ':'')+(tl?tl.toFixed(2)+' m':'')+'</td></tr></tfoot>';
+  if(withTotal)h+='<tfoot><tr><td>Total</td><td></td><td></td><td></td><td></td><td></td><td class="n">'+tq+'</td><td class="n">'+(ta?ta.toFixed(3)+' m²':'')+(ta&&tl?' · ':'')+(tl?tl.toFixed(2)+' m':'')+'</td></tr></tfoot>';
   return h+'</table>';
 }
 function renderModel(){
@@ -249,8 +281,21 @@ function renderModel(){
   $('#mparts').innerHTML=bomTable(partsFrom(B),true);
 }
 function renderParams(){
-  $('#params').innerHTML=TPL[S.tpl].f.map(function(f){
-    return '<label>'+esc(f[1])+'<input type="number" step="any" inputmode="decimal" data-k="'+f[0]+'" value="'+S.v[S.tpl][f[0]]+'"></label>';
+  var t=TPL[S.tpl],groups=Object.keys(t.materialGroups).map(function(group){
+    var config=t.materialGroups[group],id=S.v[S.tpl]['_mat_'+group]||config.default;
+    return '<label>Material · '+esc(config.label)+'<select data-material-group="'+group+'">'+materialOptions(config.family,id)+'</select></label>';
+  }).join('');
+  $('#params').innerHTML=groups+t.f.map(function(f){
+    var value=S.v[S.tpl][f[0]],label=esc(f[1]);
+    if(f[3]&&f[4]){
+      var id=S.v[S.tpl]['_mat_'+f[3]]||t.materialGroups[f[3]].default,choices=MATERIALS[id].thicknesses;
+      var custom=!!S.v[S.tpl]['_custom_'+f[0]]||choices.indexOf(+value)<0;
+      var options=choices.map(function(thickness){return '<option value="'+thickness+'"'+(!custom&&+value===thickness?' selected':'')+'>'+fmt(thickness)+' mm</option>'}).join('');
+      options+='<option value="custom"'+(custom?' selected':'')+'>Personalizado</option>';
+      return '<label>'+label+'<select data-thickness="'+f[0]+'">'+options+'</select></label>'+
+        (custom?'<label>Espesor personalizado · '+label+' (mm)<input type="number" step="any" inputmode="decimal" data-k="'+f[0]+'" value="'+value+'"></label>':'');
+    }
+    return '<label>'+label+'<input type="number" step="any" inputmode="decimal" data-k="'+f[0]+'" value="'+value+'"></label>';
   }).join('');
 }
 
@@ -303,17 +348,17 @@ function packBars(items){
   });
   return bars;
 }
-function norm(p,i){return{i:i,n:p.n||('Pieza '+(i+1)),l:+p.l,w:+p.w||0,t:+p.t||0,q:Math.floor(+p.q),k:p.k==='L'?'L':'T'}}
+function norm(p,i){var k=p.k==='L'?'L':'T';return{i:i,n:p.n||('Pieza '+(i+1)),l:+p.l,w:+p.w||0,t:+p.t||0,q:Math.floor(+p.q),k:k,mat:MATERIALS[p.mat]?p.mat:defaultMaterial(k)}}
 function compute(){
   var parts=S.p.map(norm).filter(function(p){return p.l>0&&p.q>0&&(p.k==='L'||p.w>0)}),bad=[],tg={},lg={};
   parts.forEach(function(p){
     var g,n;
     if(p.k==='T'){
       if(!((p.l<=S.L&&p.w<=S.W)||(S.rot&&p.w<=S.L&&p.l<=S.W))){bad.push(p.n);return}
-      g=tg[p.t]||(tg[p.t]={t:p.t,items:[]});
+      var tk=p.mat+'|'+p.t;g=tg[tk]||(tg[tk]={t:p.t,mat:p.mat,items:[]});
     }else{
       if(p.l>S.SL){bad.push(p.n);return}
-      var key=p.w+'|'+p.t;g=lg[key]||(lg[key]={w:p.w,t:p.t,items:[]});
+      var lk=p.mat+'|'+p.w+'|'+p.t;g=lg[lk]||(lg[lk]={w:p.w,t:p.t,mat:p.mat,items:[]});
     }
     for(n=0;n<p.q;n++)g.items.push({n:p.n,l:p.l,w:p.w,i:p.i});
   });
@@ -356,10 +401,10 @@ function renderCuts(){
   if(r.Lg.length)h+='<div class="stat"><b>'+nl+'</b><span>listones de '+fmt(S.SL)+' mm ('+fmt(tl?ul/tl*100:0)+' % de aprovechamiento)</span></div>';
   h+='<div class="stat"><b>'+r.parts.reduce(function(a,p){return a+p.q},0)+'</b><span>piezas en total</span></div></div>';
   r.T.forEach(function(g){
-    h+='<h3 class="grp">Tablero de '+fmt(g.t)+' mm<small>'+g.boards.length+' tablero(s) · '+fmt(g.used/g.total*100)+' % aprovechado</small></h3><div class="boards">'+g.boards.map(boardSVG).join('')+'</div>';
+    h+='<h3 class="grp">Tablero · '+esc(materialName(g.mat))+' · '+fmt(g.t)+' mm<small>'+g.boards.length+' tablero(s) · '+fmt(g.used/g.total*100)+' % aprovechado</small></h3><div class="boards">'+g.boards.map(boardSVG).join('')+'</div>';
   });
   r.Lg.forEach(function(g){
-    h+='<h3 class="grp">Listón de '+fmt(g.w)+' × '+fmt(g.t)+' mm<small>'+g.bars.length+' listón(es) · '+fmt(g.used/g.total*100)+' % aprovechado</small></h3><div class="boards">'+g.bars.map(barSVG).join('')+'</div>';
+    h+='<h3 class="grp">Listón · '+esc(materialName(g.mat))+' · '+fmt(g.w)+' × '+fmt(g.t)+' mm<small>'+g.bars.length+' listón(es) · '+fmt(g.used/g.total*100)+' % aprovechado</small></h3><div class="boards">'+g.bars.map(barSVG).join('')+'</div>';
   });
   h+='<h2 class="grp">Despiece</h2><div class="scroll">'+bomTable(r.parts,true)+'</div>';
   h+='<div class="actions"><button type="button" id="csv">Exportar CSV</button><button type="button" class="ghost" id="print">Imprimir planos</button></div>';
@@ -367,8 +412,8 @@ function renderCuts(){
   $('#csv').onclick=function(){exportCSV(r.parts)};$('#print').onclick=function(){window.print()};
 }
 function exportCSV(parts){
-  var lines=['Pieza;Tipo;Largo (mm);Ancho (mm);Espesor (mm);Cantidad'];
-  parts.forEach(function(x){lines.push([x.n.replace(/;/g,','),x.k==='L'?'Liston':'Tablero',x.l,x.w,x.t,x.q].join(';'))});
+  var lines=['Pieza;Material;Tipo;Largo (mm);Ancho (mm);Espesor (mm);Cantidad'];
+  parts.forEach(function(x){lines.push([x.n.replace(/;/g,','),materialName(x.mat),x.k==='L'?'Liston':'Tablero',x.l,x.w,x.t,x.q].join(';'))});
   var blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='despiece.csv';
   document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
