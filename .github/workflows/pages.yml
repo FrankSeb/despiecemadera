@@ -23,6 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Configure Supabase client
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = {
+            url: process.env.SUPABASE_URL || '',
+            anonKey: process.env.SUPABASE_ANON_KEY || ''
+          };
+          fs.writeFileSync('./despiecemadera/supabase-config.js', `window.SUPABASE_CONFIG = ${JSON.stringify(config)};\n`);
+          NODE
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./despiecemadera

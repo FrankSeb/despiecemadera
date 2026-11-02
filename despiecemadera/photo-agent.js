@@ -1,0 +1,227 @@
+const $ = selector => document.querySelector(selector);
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+let supabase = null;
+let session = null;
+let selectedFile = null;
+let previewUrl = null;
+
+function setStatus(id, message, isError) {
+  const status = document.getElementById(id);
+  status.textContent = message;
+  status.dataset.error = isError ? 'true' : 'false';
+}
+
+function updateControls() {
+  const signedIn = Boolean(session);
+  $('#photo-file').disabled = !signedIn;
+  $('#photo-consent').disabled = !signedIn;
+  $('#analyze-photo').disabled = !(supabase && signedIn && selectedFile && $('#photo-consent').checked);
+}
+
+function setPreview(file) {
+  const preview = $('#photo-preview');
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = file ? URL.createObjectURL(file) : null;
+  preview.hidden = !previewUrl;
+  if (previewUrl) preview.src = previewUrl;
+}
+
+$('#photo-file').addEventListener('change', event => {
+  const file = event.target.files[0] || null;
+  selectedFile = null;
+  setPreview(null);
+  if (!file) {
+    setStatus('photo-status', '', false);
+    updateControls();
+    return;
+  }
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    setStatus('photo-status', 'Usa una imagen JPG, PNG o WebP.', true);
+  } else if (file.size > MAX_IMAGE_BYTES) {
+    setStatus('photo-status', 'La imagen debe pesar 4 MB o menos.', true);
+  } else {
+    selectedFile = file;
+    setPreview(file);
+    setStatus('photo-status', 'Foto lista para analizar.', false);
+  }
+  updateControls();
+});
+
+$('#photo-consent').addEventListener('change', updateControls);
+
+function readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function makeInput(value, type, field, label) {
+  const input = document.createElement('input');
+  input.type = type;
+  input.value = value;
+  input.dataset.field = field;
+  input.setAttribute('aria-label', label);
+  if (type === 'number') {
+    input.min = field === 'q' ? '1' : '0';
+    input.step = 'any';
+  }
+  return input;
+}
+
+function makeMaterialSelect(family, selected) {
+  const select = document.createElement('select');
+  select.dataset.field = 'mat';
+  select.setAttribute('aria-label', 'Material');
+  Object.entries(window.MATERIAL_CATALOG || {}).forEach(([id, material]) => {
+    if (material.family !== family) return;
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = material.name;
+    option.selected = id === selected;
+    select.append(option);
+  });
+  return select;
+}
+
+function renderProposal(data) {
+  if (!Array.isArray(data.parts) || !data.parts.length) throw new Error('El análisis no devolvió piezas. Prueba con otra foto.');
+  $('#photo-summary').textContent = data.summary || 'Revisa la propuesta antes de calcular los cortes.';
+  const assumptions = $('#photo-assumptions');
+  assumptions.replaceChildren();
+  (data.assumptions || []).forEach(text => {
+    const item = document.createElement('li');
+    item.textContent = text;
+    assumptions.append(item);
+  });
+
+  const table = document.createElement('table');
+  table.className = 'pieces';
+  const headers = ['Pieza', 'Material', 'Largo (mm)', 'Ancho (mm)', 'Espesor (mm)', 'Cantidad', 'Tipo'];
+  const head = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  headers.forEach(text => {
+    const cell = document.createElement('th');
+    cell.textContent = text;
+    headRow.append(cell);
+  });
+  head.append(headRow);
+  table.append(head);
+
+  const body = document.createElement('tbody');
+  data.parts.forEach(part => {
+    const row = document.createElement('tr');
+    const kind = part.type === 'L' ? 'L' : 'T';
+    const values = [
+      makeInput(part.name || 'Pieza', 'text', 'n', 'Pieza'),
+      makeMaterialSelect(kind === 'L' ? 'wood' : 'panel', kind === 'L' ? 'wood' : 'melamine'),
+      makeInput(part.lengthMm, 'number', 'l', 'Largo'),
+      makeInput(part.widthMm || 0, 'number', 'w', 'Ancho'),
+      makeInput(part.thicknessMm, 'number', 't', 'Espesor'),
+      makeInput(part.quantity || 1, 'number', 'q', 'Cantidad'),
+      null
+    ];
+    const type = document.createElement('select');
+    type.dataset.field = 'k';
+    type.setAttribute('aria-label', 'Tipo');
+    [['T', 'Tablero'], ['L', 'Listón']].forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      option.selected = value === kind;
+      type.append(option);
+    });
+    type.addEventListener('change', () => {
+      const family = type.value === 'L' ? 'wood' : 'panel';
+      const defaultId = type.value === 'L' ? 'wood' : 'melamine';
+      const replacement = makeMaterialSelect(family, defaultId);
+      values[1].replaceWith(replacement);
+      values[1] = replacement;
+    });
+    values[6] = type;
+    values.forEach(control => {
+      const cell = document.createElement('td');
+      cell.append(control);
+      row.append(cell);
+    });
+    body.append(row);
+  });
+  table.append(body);
+  $('#photo-parts').replaceChildren(table);
+  $('#photo-result').hidden = false;
+  $('#apply-photo-parts').disabled = false;
+}
+
+$('#apply-photo-parts').addEventListener('click', () => {
+  const parts = Array.from($('#photo-parts tbody').rows).map(row => {
+    const value = field => row.querySelector('[data-field="' + field + '"]').value;
+    return { n: value('n'), mat: value('mat'), l: value('l'), w: value('w'), t: value('t'), q: value('q'), k: value('k') };
+  });
+  if (typeof window.applyPhotoParts === 'function') window.applyPhotoParts(parts);
+});
+
+window.addEventListener('despiece:photo-applied', async event => {
+  if (!supabase || !session) return;
+  try {
+    const { error } = await supabase.from('designs').insert({
+      user_id: session.id,
+      name: event.detail.name,
+      furniture_type: event.detail.furnitureType,
+      dimensions: event.detail.dimensions,
+      structure: currentProposal || {},
+      parts: event.detail.parts
+    });
+    if (error) throw error;
+    setStatus('photo-status', 'Despiece aplicado y guardado en tu cuenta.', false);
+  } catch (error) {
+    setStatus('photo-status', 'El despiece se aplicó, pero no se pudo guardar en la cuenta: ' + (error.message || 'error de conexión'), true);
+  }
+});
+
+$('#analyze-photo').addEventListener('click', async () => {
+  const dimensions = {
+    width: Number($('#dim-width').value),
+    height: Number($('#dim-height').value),
+    depth: Number($('#dim-depth').value)
+  };
+  if (!Object.values(dimensions).every(value => Number.isFinite(value) && value > 0)) {
+    setStatus('photo-status', 'Introduce ancho, alto y fondo exteriores en milímetros.', true);
+    return;
+  }
+  const button = $('#analyze-photo');
+  button.disabled = true;
+  setStatus('photo-status', 'Analizando la estructura con las dimensiones que indicaste…', false);
+  $('#photo-result').hidden = true;
+  try {
+    const base64 = await readAsBase64(selectedFile);
+    const { data, error } = await supabase.functions.invoke('analyze-furniture', {
+      body: {
+        image: { mimeType: selectedFile.type, base64 },
+        dimensions,
+        furnitureType: $('#furniture-type').value
+      }
+    });
+    if (error) throw error;
+    renderProposal(data);
+    setStatus('photo-status', 'Propuesta generada. Revisa y corrige las piezas antes de aplicarla.', false);
+  } catch (error) {
+    setStatus('photo-status', error.message || 'No se pudo analizar la foto.', true);
+  } finally {
+    updateControls();
+  }
+});
+
+async function init() {
+  const appSession = await window.APP_SESSION_READY;
+  if (!appSession) return;
+  supabase = appSession.supabase;
+  session = appSession.mode === 'user' ? appSession.user : null;
+  setStatus('photo-status', session
+    ? 'La foto solo se envía al aceptar la casilla de consentimiento.'
+    : 'Inicia sesión desde Inicio de cuenta para usar el análisis fotográfico.', false);
+  updateControls();
+}
+
+init();
