@@ -125,7 +125,20 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
   } catch {
     return reply(502, { error: "No se pudo contactar con el servicio de visión." });
   }
-  if (!modelResponse.ok) return reply(502, { error: "El servicio de visión rechazó la solicitud." });
+  if (!modelResponse.ok) {
+    let providerMessage = "El proveedor de visión rechazó la solicitud.";
+    try {
+      const providerBody = await modelResponse.json();
+      const message = providerBody?.error?.message;
+      if (typeof message === "string") providerMessage = message.replace(/\s+/g, " ").slice(0, 350);
+    } catch {
+      providerMessage = `El proveedor de visión respondió HTTP ${modelResponse.status}.`;
+    }
+    return reply(502, {
+      error: `Gemini respondió HTTP ${modelResponse.status}: ${providerMessage}`,
+      providerStatus: modelResponse.status,
+    });
+  }
 
   let result: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
   try {
