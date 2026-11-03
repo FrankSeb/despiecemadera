@@ -123,7 +123,6 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
           { type: "image", data: image.base64, mime_type: image.mimeType },
         ],
         response_format: { type: "text", mime_type: "application/json", schema: responseSchema },
-        generation_config: { thinking_level: "minimal" },
         store: false,
       }),
     });
