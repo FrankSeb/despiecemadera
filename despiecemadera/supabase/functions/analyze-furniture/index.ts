@@ -23,6 +23,66 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
   }
 }
 
+function parseCloudflareTextResponse(text: string): Record<string, unknown> | null {
+  const section = (name: string) => {
+    const pattern = new RegExp(`(?:^|\\n)\\s*(?:\\*\\s*)?\\*\\*${name}\\*\\*\\s*:\\s*([\\s\\S]*?)(?=\\n\\s*(?:\\*\\s*)?\\*\\*[^*]+\\*\\*\\s*:|$)`, "i");
+    return text.match(pattern)?.[1]?.trim() || null;
+  };
+
+  const dimensionsText = section("suggestedDimensions");
+  const dimension = (key: string) => {
+    const value = dimensionsText?.match(new RegExp(`${key}\\s*:\\s*(\\d+(?:\\.\\d+)?)`, "i"))?.[1];
+    return value === undefined ? NaN : Number(value);
+  };
+  const confidenceText = section("dimensionConfidence");
+  const confidence = confidenceText ? Number.parseFloat(confidenceText) : NaN;
+  const partsSection = section("parts");
+  const arrayStart = partsSection?.indexOf("[") ?? -1;
+  if (!dimensionsText || arrayStart < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let arrayEnd = -1;
+  for (let index = arrayStart; index < partsSection!.length; index++) {
+    const character = partsSection![index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') inString = true;
+    else if (character === "[") depth++;
+    else if (character === "]" && --depth === 0) {
+      arrayEnd = index;
+      break;
+    }
+  }
+  if (arrayEnd < 0) return null;
+
+  let parts: unknown;
+  try {
+    parts = JSON.parse(partsSection!.slice(arrayStart, arrayEnd + 1));
+  } catch {
+    return null;
+  }
+  const furnitureType = section("furnitureType")?.match(/(desk|kitchen-module|closet|shelf|table|other)/i)?.[1]?.toLowerCase();
+  if (!furnitureType || !Array.isArray(parts)) return null;
+  return {
+    furnitureType,
+    summary: section("summary") || "Propuesta recuperada de la respuesta de Cloudflare.",
+    assumptions: section("assumptions") ? [section("assumptions")] : [],
+    suggestedDimensions: {
+      widthMm: dimension("widthMm"),
+      heightMm: dimension("heightMm"),
+      depthMm: dimension("depthMm"),
+    },
+    dimensionConfidence: Number.isFinite(confidence) ? confidence : 0.3,
+    parts,
+  };
+}
+
 const responseSchema = {
   type: "object",
   required: ["furnitureType", "summary", "assumptions", "suggestedDimensions", "dimensionConfidence", "parts"],
@@ -263,11 +323,15 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
       proposal = JSON.parse(jsonText.slice(start, end + 1));
     }
   } catch {
-    return reply(502, {
-      error: `${provider} no devolvió JSON válido. Revisa la respuesta original del proveedor.`,
-      provider,
-      providerOutput: text.slice(0, 2500),
-    });
+    const recovered = provider === "Cloudflare" ? parseCloudflareTextResponse(text) : null;
+    if (recovered) proposal = recovered;
+    else {
+      return reply(502, {
+        error: `${provider} no devolvió JSON válido. Revisa la respuesta original del proveedor.`,
+        provider,
+        providerOutput: text.slice(0, 2500),
+      });
+    }
   }
   if (!Array.isArray(proposal.parts) || proposal.parts.length < 1 || proposal.parts.length > 100) {
     return reply(502, { error: "La propuesta no contiene una lista de piezas válida." });
