@@ -73,6 +73,8 @@ th{font-size:.8rem;font-weight:600;color:var(--mute);text-align:left;padding:0 4
 .photo-preview{display:block;max-width:100%;max-height:420px;margin:12px auto;border:1px solid var(--line);border-radius:4px}
 #photo-status{min-height:1.5em;color:var(--mute)}
 #photo-status[data-error=true]{color:var(--bad)}
+#provider-output{margin-top:8px;font-size:.88rem}
+#provider-output pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:10px}
 .warn{border:1px solid var(--bad);color:var(--bad);border-radius:4px;padding:8px 12px;margin-bottom:16px}
 .empty{color:var(--mute)}
 @media print{header p,.tabs,.actions,.noprint{display:none}main{padding:0}section{border:0;padding:0}.board{break-inside:avoid}}
@@ -172,6 +174,10 @@ th{font-size:.8rem;font-weight:600;color:var(--mute);text-align:left;padding:0 4
         <button type="button" id="analyze-photo" disabled>Analizar estructura</button>
       </div>
       <p id="photo-status" role="status" aria-live="polite"></p>
+      <details id="provider-output" hidden>
+        <summary>Respuesta original del modelo (máximo 2.500 caracteres)</summary>
+        <pre id="provider-output-text"></pre>
+      </details>
     </section>
     <section id="photo-result" hidden>
       <h2>Propuesta de piezas</h2>

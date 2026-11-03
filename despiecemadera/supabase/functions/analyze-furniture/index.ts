@@ -263,7 +263,11 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
       proposal = JSON.parse(jsonText.slice(start, end + 1));
     }
   } catch {
-    return reply(502, { error: `${provider} no devolvió JSON válido. Prueba con otra foto o añade las dimensiones exteriores.`, provider });
+    return reply(502, {
+      error: `${provider} no devolvió JSON válido. Revisa la respuesta original del proveedor.`,
+      provider,
+      providerOutput: text.slice(0, 2500),
+    });
   }
   if (!Array.isArray(proposal.parts) || proposal.parts.length < 1 || proposal.parts.length > 100) {
     return reply(502, { error: "La propuesta no contiene una lista de piezas válida." });

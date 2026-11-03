@@ -259,6 +259,8 @@ $('#analyze-photo').addEventListener('click', async () => {
   button.disabled = true;
   setStatus('photo-status', 'Identificando el mueble y proponiendo su estructura…', false);
   $('#photo-result').hidden = true;
+  $('#provider-output').hidden = true;
+  $('#provider-output-text').textContent = '';
   try {
     if (!selectedFile) throw new Error('Selecciona una foto para analizar.');
     const base64 = await readAsBase64(selectedFile);
@@ -275,6 +277,10 @@ $('#analyze-photo').addEventListener('click', async () => {
         try {
           const responseBody = await error.context.clone().json();
           if (responseBody.error) detail = responseBody.error;
+          if (typeof responseBody.providerOutput === 'string') {
+            $('#provider-output-text').textContent = responseBody.providerOutput;
+            $('#provider-output').hidden = false;
+          }
         } catch {}
       }
       if (/failed to send a request|networkerror|load failed/i.test(detail)) {
