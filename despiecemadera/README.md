@@ -37,9 +37,19 @@ La pestaña **Desde foto** identifica el tipo de mueble y propone la estructura 
    - Variable `SUPABASE_PROJECT_REF`: el identificador que aparece al inicio de la Project URL.
    - Secret `SUPABASE_ACCESS_TOKEN`: un access token de tu cuenta Supabase.
 
-5. Si quieres el respaldo de Cloudflare, guarda `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN` en **Supabase → Edge Functions → Secrets**. El token necesita permisos **Workers AI Read** y **Workers AI Edit**. Se usa el modelo `@cf/qwen/qwen3.8-27b`, que admite visión y no requiere la aceptación geográfica específica del modelo Llama. Cloudflare documenta una asignación gratuita diaria de 10.000 neurons y declara cero retención para este modelo; revisa sus límites y condiciones actuales.
+5. Si quieres el respaldo de Cloudflare, guarda `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN` en **Supabase → Edge Functions → Secrets**. El token necesita permisos **Workers AI Read** y **Workers AI Edit**. Se usa `@cf/meta/llama-3.2-11b-vision-instruct`, que exige que quien lo use no esté domiciliado en la UE. Cloudflare declara cero retención para el modelo y una cuota gratuita diaria de Workers AI; revisa los límites vigentes.
 
-6. Aplica una vez las migraciones de la base de datos desde PowerShell, dentro de la carpeta `despiecemadera`:
+6. Acepta una vez la licencia de Llama desde PowerShell, usando tu Account ID y token de Cloudflare (no los compartas):
+
+   ```powershell
+   $accountId = "TU_CLOUDFLARE_ACCOUNT_ID"
+   $token = "TU_CLOUDFLARE_API_TOKEN"
+   $headers = @{ Authorization = "Bearer $token" }
+   $body = @{ prompt = "agree" } | ConvertTo-Json
+   Invoke-RestMethod -Method Post -Uri "https://api.cloudflare.com/client/v4/accounts/$accountId/ai/run/@cf/meta/llama-3.2-11b-vision-instruct" -Headers $headers -ContentType "application/json" -Body $body
+   ```
+
+7. Aplica una vez las migraciones de la base de datos desde PowerShell, dentro de la carpeta `despiecemadera`:
 
    ```powershell
    supabase login

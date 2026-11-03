@@ -200,8 +200,8 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
       });
     }
 
-    const cloudflareEndpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(cloudflareAccountId)}/ai/run/@cf/qwen/qwen3.8-27b`;
-    const cloudflarePrompt = `${prompt}\n\nDevuelve exclusivamente un objeto JSON válido que siga este esquema: ${JSON.stringify(responseSchema)}`;
+    const cloudflareEndpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(cloudflareAccountId)}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct`;
+    const cloudflarePrompt = `${prompt}\n\nDevuelve exclusivamente JSON válido, sin bloques Markdown, y respeta este esquema: ${JSON.stringify(responseSchema)}`;
     let cloudflareResponse: Response;
     try {
       cloudflareResponse = await fetchWithTimeout(cloudflareEndpoint, {
@@ -218,12 +218,8 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
               { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
             ],
           }],
-          max_completion_tokens: 3072,
-          response_format: {
-            type: "json_schema",
-            json_schema: { name: "furniture_proposal", strict: true, schema: responseSchema },
-          },
-          store: false,
+          max_tokens: 3072,
+          temperature: 0.1,
         }),
       }, 30000);
     } catch {
@@ -245,7 +241,7 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
     }
     text = (cloudflareBody.result?.choices?.[0]?.message?.content || cloudflareBody.result?.response || "").trim() || null;
     provider = "Cloudflare";
-    if (!text) return reply(502, { error: "Cloudflare Qwen no devolvió una propuesta de estructura." });
+    if (!text) return reply(502, { error: "Cloudflare Llama no devolvió una propuesta de estructura." });
   }
 
   let proposal: {
@@ -257,7 +253,8 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
     parts?: Array<Record<string, unknown>>;
   };
   try {
-    proposal = JSON.parse(text);
+    const jsonText = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "");
+    proposal = JSON.parse(jsonText);
   } catch {
     return reply(502, { error: "No se pudo interpretar la propuesta del servicio de visión." });
   }
