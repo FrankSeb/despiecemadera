@@ -190,7 +190,7 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
       });
     }
 
-    const cloudflareEndpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(cloudflareAccountId)}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct`;
+    const cloudflareEndpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(cloudflareAccountId)}/ai/run/@cf/qwen/qwen3.8-27b`;
     const cloudflarePrompt = `${prompt}\n\nDevuelve exclusivamente un objeto JSON válido que siga este esquema: ${JSON.stringify(responseSchema)}`;
     let cloudflareResponse: Response;
     try {
@@ -201,17 +201,29 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          prompt: cloudflarePrompt,
-          image: image.base64,
-          max_tokens: 3072,
-          response_format: { type: "json_object" },
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: cloudflarePrompt },
+              { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
+            ],
+          }],
+          max_completion_tokens: 3072,
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: "furniture_proposal", strict: true, schema: responseSchema },
+          },
+          store: false,
         }),
       });
     } catch {
       return reply(502, { error: "Gemini está temporalmente saturado y no se pudo contactar con Cloudflare." });
     }
 
-    let cloudflareBody: { result?: { response?: string }; errors?: Array<{ message?: string }> };
+    let cloudflareBody: {
+      result?: { response?: string; choices?: Array<{ message?: { content?: string | null } }> };
+      errors?: Array<{ message?: string }>;
+    };
     try {
       cloudflareBody = await cloudflareResponse.json();
     } catch {
@@ -221,9 +233,9 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
       const message = cloudflareBody.errors?.map((error) => error.message).filter(Boolean).join(" ") || "Error del proveedor de visión.";
       return reply(502, { error: `Gemini no está disponible; Cloudflare respondió HTTP ${cloudflareResponse.status}: ${message}` });
     }
-    text = cloudflareBody.result?.response?.trim() || null;
+    text = (cloudflareBody.result?.choices?.[0]?.message?.content || cloudflareBody.result?.response || "").trim() || null;
     provider = "Cloudflare";
-    if (!text) return reply(502, { error: "Cloudflare no devolvió una propuesta de estructura." });
+    if (!text) return reply(502, { error: "Cloudflare Qwen no devolvió una propuesta de estructura." });
   }
 
   let proposal: {
