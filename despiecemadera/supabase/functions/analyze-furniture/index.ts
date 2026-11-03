@@ -107,26 +107,40 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
 
   const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
   const endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions";
-  let modelResponse: Response;
-  try {
-    modelResponse = await fetch(endpoint, {
+  const requestBody = JSON.stringify({
+    model,
+    input: [
+      { type: "text", text: prompt },
+      { type: "image", data: image.base64, mime_type: image.mimeType },
+    ],
+    response_format: { type: "text", mime_type: "application/json", schema: responseSchema },
+    store: false,
+  });
+  let modelResponse: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      modelResponse = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey,
         "Api-Revision": "2026-05-20",
       },
-      body: JSON.stringify({
-        model,
-        input: [
-          { type: "text", text: prompt },
-          { type: "image", data: image.base64, mime_type: image.mimeType },
-        ],
-        response_format: { type: "text", mime_type: "application/json", schema: responseSchema },
-        store: false,
-      }),
-    });
-  } catch {
+      body: requestBody,
+      });
+    } catch {
+      if (attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
+      continue;
+    }
+    if (modelResponse.ok || ![429, 503].includes(modelResponse.status) || attempt === 2) break;
+    const retryAfterSeconds = Number(modelResponse.headers.get("Retry-After"));
+    const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? Math.min(retryAfterSeconds * 1000, 3000)
+      : 750 * (attempt + 1);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  if (!modelResponse) {
     return reply(502, { error: "No se pudo contactar con el servicio de visión." });
   }
   if (!modelResponse.ok) {
