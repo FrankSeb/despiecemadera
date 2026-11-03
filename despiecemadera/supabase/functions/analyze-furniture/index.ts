@@ -253,10 +253,17 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
     parts?: Array<Record<string, unknown>>;
   };
   try {
-    const jsonText = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "");
-    proposal = JSON.parse(jsonText);
+    const jsonText = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    try {
+      proposal = JSON.parse(jsonText);
+    } catch {
+      const start = jsonText.indexOf("{");
+      const end = jsonText.lastIndexOf("}");
+      if (start < 0 || end <= start) throw new Error("No hay un objeto JSON en la respuesta.");
+      proposal = JSON.parse(jsonText.slice(start, end + 1));
+    }
   } catch {
-    return reply(502, { error: "No se pudo interpretar la propuesta del servicio de visión." });
+    return reply(502, { error: `${provider} no devolvió JSON válido. Prueba con otra foto o añade las dimensiones exteriores.`, provider });
   }
   if (!Array.isArray(proposal.parts) || proposal.parts.length < 1 || proposal.parts.length > 100) {
     return reply(502, { error: "La propuesta no contiene una lista de piezas válida." });
