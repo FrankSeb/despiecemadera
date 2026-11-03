@@ -58,7 +58,12 @@ Deno.serve(async (request: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!supabaseUrl || !anonKey || !apiKey) return reply(503, { error: "Falta configurar el servicio de análisis." });
+  const cloudflareAccountId = Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
+  const cloudflareApiToken = Deno.env.get("CLOUDFLARE_API_TOKEN");
+  const hasCloudflareFallback = Boolean(cloudflareAccountId && cloudflareApiToken);
+  if (!supabaseUrl || !anonKey || (!apiKey && !hasCloudflareFallback)) {
+    return reply(503, { error: "Configura Gemini o el respaldo de Cloudflare para habilitar el análisis." });
+  }
 
   const supabase = createClient(supabaseUrl, anonKey, {
     auth: { persistSession: false },
@@ -107,65 +112,119 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
 
   const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
   const endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions";
-  const requestBody = JSON.stringify({
-    model,
-    input: [
-      { type: "text", text: prompt },
-      { type: "image", data: image.base64, mime_type: image.mimeType },
-    ],
-    response_format: { type: "text", mime_type: "application/json", schema: responseSchema },
-    store: false,
-  });
-  let modelResponse: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      modelResponse = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-        "Api-Revision": "2026-05-20",
-      },
-      body: requestBody,
-      });
-    } catch {
-      if (attempt === 2) break;
-      await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
-      continue;
-    }
-    if (modelResponse.ok || ![429, 503].includes(modelResponse.status) || attempt === 2) break;
-    const retryAfterSeconds = Number(modelResponse.headers.get("Retry-After"));
-    const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-      ? Math.min(retryAfterSeconds * 1000, 3000)
-      : 750 * (attempt + 1);
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-  }
-  if (!modelResponse) {
-    return reply(502, { error: "No se pudo contactar con el servicio de visión." });
-  }
-  if (!modelResponse.ok) {
-    let providerMessage = "El proveedor de visión rechazó la solicitud.";
-    try {
-      const providerBody = await modelResponse.json();
-      const message = providerBody?.error?.message;
-      if (typeof message === "string") providerMessage = message.replace(/\s+/g, " ").slice(0, 350);
-    } catch {
-      providerMessage = `El proveedor de visión respondió HTTP ${modelResponse.status}.`;
-    }
-    return reply(502, {
-      error: `Gemini respondió HTTP ${modelResponse.status}: ${providerMessage}`,
-      providerStatus: modelResponse.status,
+  let text: string | null = null;
+  let provider = "Cloudflare";
+  let geminiFailure: { status: number | null; message: string } | null = null;
+
+  if (apiKey) {
+    const requestBody = JSON.stringify({
+      model,
+      input: [
+        { type: "text", text: prompt },
+        { type: "image", data: image.base64, mime_type: image.mimeType },
+      ],
+      response_format: { type: "text", mime_type: "application/json", schema: responseSchema },
+      store: false,
     });
+    let modelResponse: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        modelResponse = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+            "Api-Revision": "2026-05-20",
+          },
+          body: requestBody,
+        });
+      } catch {
+        if (attempt === 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
+        continue;
+      }
+      if (modelResponse.ok || ![429, 503].includes(modelResponse.status) || attempt === 2) break;
+      const retryAfterSeconds = Number(modelResponse.headers.get("Retry-After"));
+      const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+        ? Math.min(retryAfterSeconds * 1000, 3000)
+        : 750 * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
+    if (modelResponse?.ok) {
+      try {
+        const result: { output_text?: string } = await modelResponse.json();
+        text = result.output_text?.trim() || null;
+        if (text) provider = "Gemini";
+        else geminiFailure = { status: null, message: "Gemini devolvió una respuesta vacía." };
+      } catch {
+        geminiFailure = { status: null, message: "Gemini devolvió una respuesta inválida." };
+      }
+    } else if (modelResponse) {
+      let providerMessage = `Gemini respondió HTTP ${modelResponse.status}.`;
+      try {
+        const providerBody = await modelResponse.json();
+        const message = providerBody?.error?.message;
+        if (typeof message === "string") providerMessage = message.replace(/\s+/g, " ").slice(0, 350);
+      } catch {}
+      geminiFailure = { status: modelResponse.status, message: providerMessage };
+    } else {
+      geminiFailure = { status: null, message: "No se pudo contactar con Gemini." };
+    }
+
+    if (geminiFailure?.status !== null && geminiFailure && ![429, 503].includes(geminiFailure.status)) {
+      return reply(502, {
+        error: `Gemini respondió HTTP ${geminiFailure.status}: ${geminiFailure.message}`,
+        providerStatus: geminiFailure.status,
+      });
+    }
   }
 
-  let result: { output_text?: string };
-  try {
-    result = await modelResponse.json();
-  } catch {
-    return reply(502, { error: "El servicio de visión devolvió una respuesta inválida." });
+  if (!text) {
+    if (!hasCloudflareFallback || !cloudflareAccountId || !cloudflareApiToken) {
+      return reply(502, {
+        error: geminiFailure
+          ? `${geminiFailure.message} Configura CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN en Supabase para habilitar el respaldo.`
+          : "Configura GEMINI_API_KEY o el respaldo de Cloudflare en Supabase.",
+        providerStatus: geminiFailure?.status || undefined,
+      });
+    }
+
+    const cloudflareEndpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(cloudflareAccountId)}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct`;
+    const cloudflarePrompt = `${prompt}\n\nDevuelve exclusivamente un objeto JSON válido que siga este esquema: ${JSON.stringify(responseSchema)}`;
+    let cloudflareResponse: Response;
+    try {
+      cloudflareResponse = await fetch(cloudflareEndpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${cloudflareApiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: cloudflarePrompt,
+          image: image.base64,
+          max_tokens: 3072,
+          response_format: { type: "json_object" },
+        }),
+      });
+    } catch {
+      return reply(502, { error: "Gemini está temporalmente saturado y no se pudo contactar con Cloudflare." });
+    }
+
+    let cloudflareBody: { result?: { response?: string }; errors?: Array<{ message?: string }> };
+    try {
+      cloudflareBody = await cloudflareResponse.json();
+    } catch {
+      return reply(502, { error: `Cloudflare respondió HTTP ${cloudflareResponse.status} con un formato inválido.` });
+    }
+    if (!cloudflareResponse.ok || cloudflareBody.errors?.length) {
+      const message = cloudflareBody.errors?.map((error) => error.message).filter(Boolean).join(" ") || "Error del proveedor de visión.";
+      return reply(502, { error: `Gemini no está disponible; Cloudflare respondió HTTP ${cloudflareResponse.status}: ${message}` });
+    }
+    text = cloudflareBody.result?.response?.trim() || null;
+    provider = "Cloudflare";
+    if (!text) return reply(502, { error: "Cloudflare no devolvió una propuesta de estructura." });
   }
-  const text = result.output_text?.trim();
-  if (!text) return reply(502, { error: "El servicio de visión no devolvió una propuesta." });
 
   let proposal: {
     furnitureType?: string;
@@ -218,6 +277,7 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
     ? proposal.assumptions.filter((item): item is string => typeof item === "string").slice(0, 20)
     : [];
   const output = {
+    provider,
     furnitureType: detectedFurnitureType,
     summary: typeof proposal.summary === "string" ? proposal.summary.slice(0, 500) : "Propuesta generada desde la fotografía.",
     suggestedDimensions,

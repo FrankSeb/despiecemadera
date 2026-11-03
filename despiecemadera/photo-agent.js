@@ -283,7 +283,8 @@ $('#analyze-photo').addEventListener('click', async () => {
       throw new Error(detail);
     }
     renderProposal(data);
-    setStatus('photo-status', 'Propuesta generada. Revisa y corrige las piezas antes de aplicarla.', false);
+    const provider = data.provider === 'Cloudflare' ? 'Cloudflare' : 'Gemini';
+    setStatus('photo-status', 'Propuesta generada con ' + provider + '. Revisa y corrige las piezas antes de aplicarla.', false);
   } catch (error) {
     setStatus('photo-status', error.message || 'No se pudo analizar la foto.', true);
   } finally {
