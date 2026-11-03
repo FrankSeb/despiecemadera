@@ -37,7 +37,7 @@ La pestaña **Desde foto** identifica el tipo de mueble y propone la estructura 
    - Variable `SUPABASE_PROJECT_REF`: el identificador que aparece al inicio de la Project URL.
    - Secret `SUPABASE_ACCESS_TOKEN`: un access token de tu cuenta Supabase.
 
-5. Si quieres el respaldo de Cloudflare, guarda `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN` en **Supabase → Edge Functions → Secrets**. El token necesita permisos **Workers AI Read** y **Workers AI Edit**. Se usa `@cf/meta/llama-3.2-11b-vision-instruct`, que exige que quien lo use no esté domiciliado en la UE. Cloudflare declara cero retención para el modelo y una cuota gratuita diaria de Workers AI; revisa los límites vigentes.
+5. Si quieres el respaldo de Cloudflare, guarda `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN` en **Supabase → Edge Functions → Secrets**. Obtén el Account ID en Cloudflare → **Workers AI → Use REST API**; suele ser una cadena hexadecimal de 32 caracteres. No uses aquí el `SUPABASE_PROJECT_REF`, la URL de Supabase ni una API key. El token de Cloudflare debe ser de esa misma cuenta y tener permisos **Workers AI Read** y **Workers AI Edit**. Se usa `@cf/meta/llama-3.2-11b-vision-instruct`, que exige que quien lo use no esté domiciliado en la UE. Cloudflare declara cero retención para el modelo y una cuota gratuita diaria de Workers AI; revisa los límites vigentes.
 
 6. Acepta una vez la licencia de Llama desde PowerShell, usando tu Account ID y token de Cloudflare (no los compartas):
 
