@@ -13,6 +13,16 @@ function reply(status: number, body: Record<string, unknown>) {
   });
 }
 
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const responseSchema = {
   type: "object",
   required: ["furnitureType", "summary", "assumptions", "suggestedDimensions", "dimensionConfidence", "parts"],
@@ -129,7 +139,7 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
     let modelResponse: Response | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        modelResponse = await fetch(endpoint, {
+        modelResponse = await fetchWithTimeout(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -137,7 +147,7 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
             "Api-Revision": "2026-05-20",
           },
           body: requestBody,
-        });
+        }, 20000);
       } catch {
         if (attempt === 2) break;
         await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
@@ -194,7 +204,7 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
     const cloudflarePrompt = `${prompt}\n\nDevuelve exclusivamente un objeto JSON válido que siga este esquema: ${JSON.stringify(responseSchema)}`;
     let cloudflareResponse: Response;
     try {
-      cloudflareResponse = await fetch(cloudflareEndpoint, {
+      cloudflareResponse = await fetchWithTimeout(cloudflareEndpoint, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${cloudflareApiToken}`,
@@ -215,9 +225,9 @@ No calcules escala desde píxeles. Devuelve suggestedDimensions en mm y dimensio
           },
           store: false,
         }),
-      });
+      }, 30000);
     } catch {
-      return reply(502, { error: "Gemini está temporalmente saturado y no se pudo contactar con Cloudflare." });
+      return reply(504, { error: "Gemini está temporalmente saturado y Cloudflare no respondió en 30 segundos. Inténtalo de nuevo." });
     }
 
     let cloudflareBody: {
